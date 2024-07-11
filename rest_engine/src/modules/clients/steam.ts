@@ -14,7 +14,7 @@ class SteamClient extends SteamUser {
       changelistUpdateInterval: 5000,
     });
 
-    super.logOn({ accountName: config.USER, password: config.PASS });
+    super.logOn({ anonymous: true });
     super.gamesPlayed([730], true);
     super.on("appLaunched", (e) => console.log(e));
     console.log("Steam client online.");

@@ -18,6 +18,6 @@ pub async fn fetch_data_from_server(
     let map: Map<String, Value> = body["data"].as_object().unwrap().clone();
     let old_data: Map<String, Value> = map.clone();
     let latest_data: Map<String, Value> = map.clone();
-    let changenumber_diff: Value = json!({});
-    Ok((old_data, latest_data, changenumber_diff))
+    let detected_changes: Value = json!({});
+    Ok((old_data, latest_data, detected_changes))
 }

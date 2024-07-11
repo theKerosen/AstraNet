@@ -1,4 +1,4 @@
-pub mod create_changenumber_diff_json;
+pub mod diff_comparer;
 pub mod create_file;
 pub mod extract_data_from_value;
 pub mod fetch_data_from_server;
