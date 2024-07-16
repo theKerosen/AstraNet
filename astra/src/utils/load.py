@@ -4,6 +4,8 @@ import os
 import discord
 from discord.ext import commands
 from utils.dictionaries import api_status_dictionary
+import asyncio
+import threading
 
 
 class loader:
@@ -22,7 +24,6 @@ class loader:
         except api.status_code != 200:
             print(f"{api_status_dictionary[response.status_code]}")
             return None
-
         return response
 
     async def embed_message(self, channel_id, content, title, description):
@@ -35,30 +36,34 @@ class loader:
         await channel.send(content=content, embed=embed)
 
     def main_loader(self, channel_id):
-        with open(f"{os.getcwd()}/astra/state.json", "r+") as f:
-            open_state = json.load(f)
-            state = open_state["state"]
+        async def loop():
+            while True:
+                with open(f"{os.getcwd()}/astra/state.json", "r+") as f:
+                    open_state = json.load(f)
+                    state = open_state["state"]
 
-            response = self.setup_services()
+                    response = self.setup_services()
 
-            if (
-                response is None
-                or response["services"] == "unknown"
-                and response["matchmaking"] == "unknown"
-            ):
-                self.embed_message(
-                    channel_id,
-                    "The following services are offline:",
-                    "API",
-                    "The Steam API is offline.",
-                )
-                return False
+                    if (
+                        response is None
+                        or response["services"] == "unknown"
+                        and response["matchmaking"] == "unknown"
+                    ):
+                        await self.embed_message(
+                            channel_id,
+                            "The following services are offline:",
+                            "API",
+                            "The Steam API is offline.",
+                        )
+                    else:
+                        state["sessions_logon"] = response["services"]["SessionsLogon"]
+                        state["community"] = response["services"]["SteamCommunity"]
+                        state["matchmaker"] = response["matchmaking"]["scheduler"]
 
-            state["sessions_logon"] = response["services"]["SessionsLogon"]
-            state["community"] = response["services"]["SteamCommunity"]
-            state["matchmaker"] = response["matchmaking"]["scheduler"]
+                        f.seek(0)
+                        json.dump(open_state, f, indent=4)
+                        f.truncate()
 
-            f.seek(0)
-            json.dump(open_state, f, indent=4)
-            f.truncate()
-        return True
+                await asyncio.sleep(2)
+
+        threading.Thread(target=asyncio.run, args=(loop(),)).start()

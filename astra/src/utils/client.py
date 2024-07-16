@@ -4,6 +4,9 @@ import os
 from utils.thread import thread
 from utils.handler import handler
 from discord.ext import commands
+from utils.services import cs_services
+from utils.changenumber_check import changenumber_check
+from utils.depot_check import depot_check
 import discord
 import datetime, time
 
@@ -18,9 +21,12 @@ class AstraNet(commands.Bot):
 
         await handler().setup(self)
         print("Connected to Discord.")
+        asyncio.create_task(thread(self, data["c_uptime"], data["r_uptime"]).setup())
+        asyncio.create_task(cs_services(self).check_services(data["c_uptime"], data["r_uptime"]))
+        asyncio.create_task(changenumber_check(self).check_changenumber())
+        asyncio.create_task(depot_check(self).depot_check())
         self.remove_command("help")
         asyncio.create_task(self.presence())
-        asyncio.ensure_future(thread(self, data["c_uptime"], data["r_uptime"]).setup())
     
     async def presence(self):
         timenow = time.time()

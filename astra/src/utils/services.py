@@ -32,6 +32,7 @@ class cs_services:
         await channel.send(content=content, embed=embed)
 
     async def check_services(self, channel_id: int, role_id: int):
+        print("services initialized")
         while True:
             with open(f"{os.getcwd()}/astra/state.json", "r+") as f:
                 open_state = json.load(f)

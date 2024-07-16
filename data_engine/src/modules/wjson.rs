@@ -25,7 +25,6 @@ pub async fn a_writer(appid: i32) -> Result<(), Box<dyn std::error::Error>> {
         Err(_) => create_file(format!("{}_changes.json", appid).as_str()).unwrap(),
     };
 
-
     let mut app: HashMap<String, Value> = serde_json::from_reader(app_file)?;
 
     let appinfo: Option<&mut Value> = app.get_mut(&appid.to_string());
