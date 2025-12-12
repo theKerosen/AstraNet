@@ -8,7 +8,10 @@ import (
 	"unicode"
 )
 
-const MinStringLength = 4
+const (
+	MinStringLength = 4
+	bufferSize      = 64 * 1024 // 64KB buffer for reading
+)
 
 var interestingPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)CMsg[A-Z]`),
@@ -45,19 +48,95 @@ type StringMatch struct {
 	Category string
 }
 
+// ExtractAndFilterStrings streams the file and filters strings on the fly to reduce memory usage
+func ExtractAndFilterStrings(filePath string) ([]StringMatch, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var matches []StringMatch
+	seen := make(map[string]bool)
+	reader := bufio.NewReaderSize(file, bufferSize)
+
+	var current []rune
+
+	for {
+		r, _, err := reader.ReadRune()
+		if err != nil {
+			break
+		}
+
+		if isPrintableRune(r) {
+			current = append(current, r)
+		} else {
+			if len(current) >= MinStringLength {
+				s := string(current)
+				if !seen[s] {
+					match, ok := evaluateString(s)
+					if ok {
+						matches = append(matches, match)
+						seen[s] = true
+					} else if isReasonableString(s) {
+						// Keep "reasonable" strings but maybe as 'other' to not lose data,
+						// but effectively we might want to be stricter here if perf is still bad.
+						// For now, let's keep the logic similar but streaming.
+						// Optimize: Don't store "other" if it's too generic?
+						// Let's stick to the original logic for "other" but applied here.
+						matches = append(matches, StringMatch{Value: s, Category: "other"})
+						seen[s] = true
+					}
+				}
+			}
+			current = nil
+		}
+	}
+
+	// Handle last buffer
+	if len(current) >= MinStringLength {
+		s := string(current)
+		if !seen[s] {
+			if match, ok := evaluateString(s); ok {
+				matches = append(matches, match)
+			} else if isReasonableString(s) {
+				matches = append(matches, StringMatch{Value: s, Category: "other"})
+			}
+		}
+	}
+
+	return matches, nil
+}
+
+func evaluateString(s string) (StringMatch, bool) {
+	for _, pattern := range interestingPatterns {
+		if pattern.MatchString(s) {
+			return StringMatch{
+				Value:    s,
+				Category: categorizeString(s),
+			}, true
+		}
+	}
+	return StringMatch{}, false
+}
+
+func isPrintableRune(r rune) bool {
+	return unicode.IsPrint(r) && r < 128
+}
+
+// Deprecated: Use ExtractAndFilterStrings instead
 func ExtractStrings(filePath string) ([]string, error) {
+	// Implementation preserved for compatibility but inefficient
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
-
 	return extractPrintableStrings(data), nil
 }
 
 func extractPrintableStrings(data []byte) []string {
 	var strings []string
 	var current []byte
-
 	for _, b := range data {
 		if isPrintable(b) {
 			current = append(current, b)
@@ -68,11 +147,9 @@ func extractPrintableStrings(data []byte) []string {
 			current = nil
 		}
 	}
-
 	if len(current) >= MinStringLength {
 		strings = append(strings, string(current))
 	}
-
 	return strings
 }
 
@@ -82,44 +159,28 @@ func isPrintable(b byte) bool {
 }
 
 func FilterInterestingStrings(strings []string) []StringMatch {
+	// Compatibility wrapper
 	var matches []StringMatch
 	seen := make(map[string]bool)
-
 	for _, s := range strings {
 		if seen[s] {
 			continue
 		}
-
-		// Check if it matches any specific catgeory
-		matched := false
-		for _, pattern := range interestingPatterns {
-			if pattern.MatchString(s) {
-				category := categorizeString(s)
-				matches = append(matches, StringMatch{
-					Value:    s,
-					Category: category,
-				})
-				seen[s] = true
-				matched = true
-				break
-			}
-		}
-
-		// If no specific match, still include it as "other" if it looks reasonable
-		// Reasonable = has at least 1 letter and isn't just symbols
-		if !matched && isReasonableString(s) {
-			matches = append(matches, StringMatch{
-				Value:    s,
-				Category: "other",
-			})
+		if match, ok := evaluateString(s); ok {
+			matches = append(matches, match)
+			seen[s] = true
+		} else if isReasonableString(s) {
+			matches = append(matches, StringMatch{Value: s, Category: "other"})
 			seen[s] = true
 		}
 	}
-
 	return matches
 }
 
 func isReasonableString(s string) bool {
+	if len(s) > 100 {
+		return false
+	} // Optimization: Ignore super long garbage strings
 	hasLetter := false
 	for _, r := range s {
 		if unicode.IsLetter(r) {
@@ -132,7 +193,6 @@ func isReasonableString(s string) bool {
 
 func categorizeString(s string) string {
 	lower := strings.ToLower(s)
-
 	switch {
 	case strings.Contains(lower, "cmsg") || strings.Contains(lower, "proto"):
 		return "protobuf"
@@ -165,38 +225,32 @@ func ExtractStringsFromTextFile(filePath string) ([]string, error) {
 		return nil, err
 	}
 	defer file.Close()
-
 	var lines []string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
 	}
-
 	return lines, scanner.Err()
 }
 
 func CompareStringSets(oldStrings, newStrings []string) (added, removed []string) {
 	oldSet := make(map[string]bool)
 	newSet := make(map[string]bool)
-
 	for _, s := range oldStrings {
 		oldSet[s] = true
 	}
 	for _, s := range newStrings {
 		newSet[s] = true
 	}
-
 	for s := range newSet {
 		if !oldSet[s] {
 			added = append(added, s)
 		}
 	}
-
 	for s := range oldSet {
 		if !newSet[s] {
 			removed = append(removed, s)
 		}
 	}
-
 	return added, removed
 }

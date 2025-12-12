@@ -214,16 +214,19 @@ func (m *Monitor) extractAndCompare(result *diff.DiffResult, oldPath, newPath st
 		fileCount++
 
 		log.Printf("Extracting strings from %s...", filepath.Base(path))
-		newStrings, err := extractor.ExtractStrings(path)
+
+		// Use optimized streaming extraction to save memory
+		interesting, err := extractor.ExtractAndFilterStrings(path)
 		if err != nil {
 			log.Printf("Extraction failed for %s: %v", filepath.Base(path), err)
 			return nil
 		}
-		log.Printf("Extracted %d strings from %s", len(newStrings), filepath.Base(path))
+		log.Printf("Extracted %d interesting strings from %s", len(interesting), filepath.Base(path))
 
-		interesting := extractor.FilterInterestingStrings(newStrings)
+		var newStrings []string
 		for _, match := range interesting {
 			result.NewStrings = append(result.NewStrings, match.Value)
+			newStrings = append(newStrings, match.Value)
 		}
 
 		protos := extractor.ExtractProtobufs(newStrings)
