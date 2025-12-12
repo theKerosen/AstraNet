@@ -8,6 +8,9 @@ services:
     environment:
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
       - APP_ID=${APP_ID:-730}
+      - STEAM_API_KEY=${STEAM_API_KEY}
+      - STEAM_USER=${STEAM_USER}
+      - STEAM_PASS=${STEAM_PASS}
       - DB_PATH=/data/astranet.db
       - API_PORT=8000
     volumes:

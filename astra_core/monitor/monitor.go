@@ -153,7 +153,8 @@ func (m *Monitor) check() {
 }
 
 func (m *Monitor) analyzeDepotChanges(result *diff.DiffResult, oldInfo, newInfo *steamcmd.AppInfo) {
-	binaryDepots := []string{"734", "735", "736", "737", "738"}
+	// Apenas Dedicated Server (734) e Win64 (735) são suficientes para analisar strings e CVars
+	binaryDepots := []string{"734", "735"}
 
 	for _, change := range result.ChangedDepots {
 		if !contains(binaryDepots, change.ID) {
