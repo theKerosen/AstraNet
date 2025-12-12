@@ -43,6 +43,10 @@ func (db *DB) migrate() error {
 		last_diff_gz TEXT,
 		last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+	CREATE TABLE IF NOT EXISTS webhooks (
+		url TEXT PRIMARY KEY,
+		added_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 	_, err := db.conn.Exec(query)
 	return err
@@ -127,4 +131,34 @@ func decompressGzip(data []byte) ([]byte, error) {
 	}
 	defer r.Close()
 	return io.ReadAll(r)
+}
+func (db *DB) AddWebhook(url string) error {
+	query := `INSERT INTO webhooks (url) VALUES (?) ON CONFLICT(url) DO NOTHING`
+	_, err := db.conn.Exec(query, url)
+	return err
+}
+
+func (db *DB) RemoveWebhook(url string) error {
+	query := `DELETE FROM webhooks WHERE url = ?`
+	_, err := db.conn.Exec(query, url)
+	return err
+}
+
+func (db *DB) GetAllWebhooks() ([]string, error) {
+	query := `SELECT url FROM webhooks`
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var urls []string
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			continue
+		}
+		urls = append(urls, u)
+	}
+	return urls, nil
 }

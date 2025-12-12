@@ -40,7 +40,7 @@ func main() {
 
 	apiPort := getEnv("API_PORT", "8080")
 
-	mon := monitor.NewMonitor(appID, db, webhookURL)
+	mon := monitor.NewMonitor(appID, db)
 
 	apiServer := api.NewServer(mon)
 	go apiServer.Start(":" + apiPort)

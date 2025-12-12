@@ -48,6 +48,9 @@ func (s *Server) Start(addr string) {
 	http.HandleFunc("/steam/depots", withGzip(s.handleDepots))
 	http.HandleFunc("/steam/servers", s.handleServers)
 
+	// Webhook Management
+	http.HandleFunc("/api/webhooks", s.handleWebhooks)
+
 	log.Printf("API Server listening on %s", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatalf("API Server failed: %v", err)
@@ -493,4 +496,66 @@ func checkCache(w http.ResponseWriter, r *http.Request, etag string) bool {
 		}
 	}
 	return false
+}
+
+func (s *Server) handleWebhooks(w http.ResponseWriter, r *http.Request) {
+	setCORS(w)
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	switch r.Method {
+	case "GET":
+		urls, err := s.mon.GetWebhooks()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"webhooks": urls})
+
+	case "POST":
+		var req struct {
+			URL string `json:"url"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if req.URL == "" {
+			http.Error(w, "URL is required", http.StatusBadRequest)
+			return
+		}
+		if err := s.mon.AddWebhook(req.URL); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{"status": "added", "url": req.URL})
+
+	case "DELETE":
+		var req struct {
+			URL string `json:"url"`
+		}
+		// Try query param first
+		url := r.URL.Query().Get("url")
+		if url == "" {
+			// Try body
+			json.NewDecoder(r.Body).Decode(&req)
+			url = req.URL
+		}
+
+		if url == "" {
+			http.Error(w, "URL is required", http.StatusBadRequest)
+			return
+		}
+
+		if err := s.mon.RemoveWebhook(url); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "removed", "url": url})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }

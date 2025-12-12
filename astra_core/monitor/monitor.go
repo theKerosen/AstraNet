@@ -21,17 +21,18 @@ type Monitor struct {
 	tracker          *diff.Tracker
 	notifier         *notifier.DiscordNotifier
 	downloader       *depot.Downloader
+	statusMon        *StatusMonitor
 	appID            int
 	lastChangeNumber string
 	lastDiff         *diff.DiffResult
 }
 
-func NewMonitor(appID int, db *database.DB, webhookURL string) *Monitor {
+func NewMonitor(appID int, db *database.DB) *Monitor {
 	client := steamcmd.NewClient()
-	var notif *notifier.DiscordNotifier
-	if webhookURL != "" {
-		notif = notifier.NewDiscordNotifier(webhookURL)
-	}
+
+	// notifier now uses DB for multi-webhook support
+	notif := notifier.NewDiscordNotifier(db)
+	statMon := NewStatusMonitor(notif)
 
 	return &Monitor{
 		client:     client,
@@ -39,8 +40,23 @@ func NewMonitor(appID int, db *database.DB, webhookURL string) *Monitor {
 		tracker:    diff.NewTracker(client),
 		notifier:   notif,
 		downloader: depot.NewDownloader(appID),
+		statusMon:  statMon,
 		appID:      appID,
 	}
+}
+
+// Webhook Management Proxies
+
+func (m *Monitor) AddWebhook(url string) error {
+	return m.db.AddWebhook(url)
+}
+
+func (m *Monitor) RemoveWebhook(url string) error {
+	return m.db.RemoveWebhook(url)
+}
+
+func (m *Monitor) GetWebhooks() ([]string, error) {
+	return m.db.GetAllWebhooks()
 }
 
 func (m *Monitor) LoadState() {
@@ -91,6 +107,11 @@ func (m *Monitor) Start() {
 
 	m.LoadState()
 	log.Printf("Loaded State: ChangeNumber=%s", m.lastChangeNumber)
+
+	// Start Status Monitor
+	if m.statusMon != nil {
+		m.statusMon.Start()
+	}
 
 	for {
 		m.check()
@@ -144,11 +165,12 @@ func (m *Monitor) check() {
 			}
 		}
 
-		if m.notifier != nil {
-			if err := m.notifier.Notify(diffResult); err != nil {
-				log.Printf("Failed to send notification: %v", err)
-			}
-		}
+		// Config: Game Update Webhook Notifications disabled by user request.
+		// if m.notifier != nil {
+		// 	if err := m.notifier.Notify(diffResult); err != nil {
+		// 		log.Printf("Failed to send notification: %v", err)
+		// 	}
+		// }
 
 		m.handleUpdate(info, output)
 	} else {

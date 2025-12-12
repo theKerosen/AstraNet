@@ -1,6 +1,7 @@
 package notifier
 
 import (
+	"astra_core/database"
 	"astra_core/diff"
 	"bytes"
 	"encoding/json"
@@ -9,15 +10,16 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
 type DiscordNotifier struct {
-	WebhookURL string
+	db *database.DB
 }
 
-func NewDiscordNotifier(webhookURL string) *DiscordNotifier {
-	return &DiscordNotifier{WebhookURL: webhookURL}
+func NewDiscordNotifier(db *database.DB) *DiscordNotifier {
+	return &DiscordNotifier{db: db}
 }
 
 type WebhookPayload struct {
@@ -33,6 +35,7 @@ type Embed struct {
 	Thumbnail   *EmbedImage  `json:"thumbnail,omitempty"`
 	Footer      *EmbedFooter `json:"footer,omitempty"`
 	Timestamp   string       `json:"timestamp,omitempty"`
+	URL         string       `json:"url,omitempty"`
 }
 
 type EmbedField struct {
@@ -46,14 +49,112 @@ type EmbedImage struct {
 }
 
 type EmbedFooter struct {
-	Text string `json:"text"`
+	Text    string `json:"text"`
+	IconURL string `json:"icon_url,omitempty"`
+}
+
+// StatusUpdate represents a change in service status
+type StatusUpdate struct {
+	Service       string // "Steam" or "CS2"
+	OldStatus     string
+	NewStatus     string
+	IsMaintenance bool
+}
+
+func (n *DiscordNotifier) broadcast(payload WebhookPayload, files map[string][]byte) error {
+	urls, err := n.db.GetAllWebhooks()
+	if err != nil {
+		return err
+	}
+	if len(urls) == 0 {
+		return nil
+	}
+
+	var wg sync.WaitGroup
+	for _, url := range urls {
+		wg.Add(1)
+		go func(u string) {
+			defer wg.Done()
+			if err := n.send(u, payload, files); err != nil {
+				log.Printf("Failed to send webhook to %s: %v", u, err)
+			}
+		}(url)
+	}
+	wg.Wait()
+	return nil
+}
+
+func (n *DiscordNotifier) send(url string, payload WebhookPayload, files map[string][]byte) error {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	for filename, content := range files {
+		part, err := writer.CreateFormFile("files["+filename+"]", filename)
+		if err != nil {
+			return err
+		}
+		part.Write(content)
+	}
+
+	if err := writer.WriteField("payload_json", string(payloadBytes)); err != nil {
+		return err
+	}
+
+	if err := writer.Close(); err != nil {
+		return err
+	}
+
+	resp, err := http.Post(url, writer.FormDataContentType(), body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("status: %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (n *DiscordNotifier) NotifyStatus(update StatusUpdate) error {
+	color := 0x00FF00 // Green
+	title := fmt.Sprintf("Serviços Online: %s", update.Service)
+	description := "O serviço está operando normalmente."
+
+	if update.NewStatus == "offline" || update.NewStatus == "critical" {
+		if update.IsMaintenance {
+			color = 0xFFA500 // Orange
+			title = "Manutenção Steam"
+			description = "Manutenção de rotina detectada. Serviços podem estar instáveis."
+		} else {
+			color = 0xFF0000 // Red
+			title = fmt.Sprintf("Alerta de Serviço: %s", update.Service)
+			description = fmt.Sprintf("O serviço está atualmente **%s**.", strings.ToUpper(update.NewStatus))
+		}
+	} else if update.NewStatus == "online" && update.OldStatus != "online" {
+		title = fmt.Sprintf("Serviço Recuperado: %s", update.Service)
+		description = "O serviço voltou a operar normalmente."
+	}
+
+	embed := Embed{
+		Title:       title,
+		Description: description,
+		Color:       color,
+		Timestamp:   time.Now().Format(time.RFC3339),
+		Footer: &EmbedFooter{
+			Text: "AstraNet • https://ladyluh.dev",
+		},
+	}
+
+	return n.broadcast(WebhookPayload{Embeds: []Embed{embed}}, nil)
 }
 
 func (n *DiscordNotifier) Notify(result *diff.DiffResult) error {
-	if n.WebhookURL == "" {
-		return fmt.Errorf("webhook URL is empty")
-	}
-
 	color := getColorForUpdateType(result.Type)
 
 	embed := Embed{
@@ -64,6 +165,9 @@ func (n *DiscordNotifier) Notify(result *diff.DiffResult) error {
 			URL: "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/730/8dbc71957312bbd3baea65848b545be9eae2a355.jpg",
 		},
 		Timestamp: time.Now().Format(time.RFC3339),
+		Footer: &EmbedFooter{
+			Text: "AstraNet • https://ladyluh.dev",
+		},
 	}
 
 	if result.Type != diff.UpdateTypeUnknown {
@@ -93,10 +197,6 @@ func (n *DiscordNotifier) Notify(result *diff.DiffResult) error {
 			if name == "" {
 				name = "Unknown Depot"
 			}
-			oldGid := depot.OldGID
-			if oldGid == "" {
-				oldGid = "New"
-			}
 			content.WriteString(fmt.Sprintf("**%s** (`%s`)\n", name, depot.ID))
 		}
 
@@ -107,91 +207,43 @@ func (n *DiscordNotifier) Notify(result *diff.DiffResult) error {
 		})
 	}
 
-	if len(result.NewProtobufs) > 0 {
-		var protoList strings.Builder
-		for i, proto := range result.NewProtobufs {
-			if i >= 10 {
-				protoList.WriteString(fmt.Sprintf("... and %d more", len(result.NewProtobufs)-10))
+	if len(result.StringBlocks) > 0 {
+		var notable strings.Builder
+		count := 0
+		for _, block := range result.StringBlocks {
+			for _, s := range block.Strings {
+				if count >= 10 {
+					break
+				}
+				if len(s) < 50 { // simple filter
+					notable.WriteString(fmt.Sprintf("`%s`\n", s))
+					count++
+				}
+			}
+			if count >= 10 {
+				notable.WriteString("... and more")
 				break
 			}
-			protoList.WriteString(fmt.Sprintf("`%s`\n", proto))
 		}
 
-		embed.Fields = append(embed.Fields, EmbedField{
-			Name:   "New Protobufs",
-			Value:  protoList.String(),
-			Inline: false,
-		})
-	}
-
-	if len(result.NewStrings) > 0 {
-		var stringList strings.Builder
-		for i, s := range result.NewStrings {
-			if i >= 10 {
-				stringList.WriteString(fmt.Sprintf("... and %d more", len(result.NewStrings)-10))
-				break
-			}
-			stringList.WriteString(fmt.Sprintf("`%s`\n", s))
+		if notable.Len() > 0 {
+			embed.Fields = append(embed.Fields, EmbedField{
+				Name:   "Notable Strings",
+				Value:  notable.String(),
+				Inline: false,
+			})
 		}
-
-		embed.Fields = append(embed.Fields, EmbedField{
-			Name:   "Notable Strings",
-			Value:  stringList.String(),
-			Inline: false,
-		})
 	}
 
-	embed.Footer = &EmbedFooter{
-		Text: "AstraNet • Steam Update Monitor",
-	}
-
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	payload := WebhookPayload{
-		Embeds: []Embed{embed},
-	}
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
+	files := make(map[string][]byte)
 	if result.RawDiff != "" {
-		part, err := writer.CreateFormFile("files[0]", "vdf_diff.txt")
-		if err != nil {
-			return err
-		}
-		part.Write([]byte(result.RawDiff))
+		files["vdf_diff.txt"] = []byte(result.RawDiff)
 	}
-
 	if result.Analysis != "" {
-		part, err := writer.CreateFormFile("files[1]", "analysis.md")
-		if err != nil {
-			return err
-		}
-		part.Write([]byte(result.Analysis))
+		files["analysis.md"] = []byte(result.Analysis)
 	}
 
-	if err := writer.WriteField("payload_json", string(payloadBytes)); err != nil {
-		return err
-	}
-
-	if err := writer.Close(); err != nil {
-		return err
-	}
-
-	resp, err := http.Post(n.WebhookURL, writer.FormDataContentType(), body)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("discord webhook failed with status: %d", resp.StatusCode)
-	}
-
-	log.Println("Discord notification sent successfully.")
-	return nil
+	return n.broadcast(WebhookPayload{Embeds: []Embed{embed}}, files)
 }
 
 func getColorForUpdateType(t diff.UpdateType) int {
