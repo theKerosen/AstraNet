@@ -3,6 +3,7 @@ package depot
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -84,7 +85,10 @@ func (d *Downloader) DownloadDepot(depotID int, manifestID string, fileFilter st
 		if size < 1000 {
 			log.Printf("WARNING: Downloaded depot %d is remarkably small (%d bytes). This usually indicates authentication failure or a protected depot.", depotID, size)
 		}
-		os.Rename(depotPath, outputDir)
+
+		if err := moveOrCopy(depotPath, outputDir); err != nil {
+			return "", fmt.Errorf("failed to move depot files: %w", err)
+		}
 		return outputDir, nil
 	}
 
@@ -199,6 +203,56 @@ func getDirSize(path string) (int64, error) {
 		return nil
 	})
 	return size, nil
+}
+
+func moveOrCopy(src, dst string) error {
+	// Try atomic rename first
+	err := os.Rename(src, dst)
+	if err == nil {
+		return nil
+	}
+
+	// If rename fails (likely cross-device), fallback to copy+delete
+	log.Printf("Rename failed (%v), falling back to copy...", err)
+
+	err = filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, _ := filepath.Rel(src, path)
+		dstPath := filepath.Join(dst, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(dstPath, info.Mode())
+		}
+
+		// Copy file
+		in, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer in.Close()
+
+		out, err := os.Create(dstPath)
+		if err != nil {
+			return err
+		}
+		defer out.Close()
+
+		if _, err := io.Copy(out, in); err != nil {
+			return err
+		}
+
+		return out.Chmod(info.Mode())
+	})
+
+	if err != nil {
+		return err
+	}
+
+	// Remove source after successful copy
+	return os.RemoveAll(src)
 }
 
 func (d *Downloader) GetCachedFiles(depotID int, manifestID string) ([]string, error) {
