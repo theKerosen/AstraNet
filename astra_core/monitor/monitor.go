@@ -160,10 +160,8 @@ func (m *Monitor) analyzeDepotChanges(result *diff.DiffResult, oldInfo, newInfo 
 			continue
 		}
 
-		if change.OldGID == "" {
-			continue
-		}
-
+		// If OldGID is empty, it means it's a new depot or first run.
+		// We still want to analyze it to extract strings.
 		log.Printf("Analyzing depot %s (%s)...", change.ID, change.Name)
 
 		m.downloadAndAnalyzeDepot(result, change)
