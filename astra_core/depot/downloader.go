@@ -53,7 +53,7 @@ func (d *Downloader) DownloadDepot(depotID int, manifestID string, fileFilter st
 
 	args := append(loginArgs,
 		"+@sSteamCmdForcePlatformType", "windows",
-		"+download_depot", fmt.Sprintf("%d", d.appID), fmt.Sprintf("%d", depotID), manifestID,
+		"+download_depot", fmt.Sprintf("%d", d.appID), fmt.Sprintf("%d", depotID),
 	)
 
 	if fileFilter != "" {
