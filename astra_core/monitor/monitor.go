@@ -198,6 +198,9 @@ func (m *Monitor) extractAndCompare(result *diff.DiffResult, oldPath, newPath st
 			return nil
 		}
 
+		// Log all files found for debugging
+		log.Printf("Found file: %s", path)
+
 		ext := strings.ToLower(filepath.Ext(path))
 		if ext != ".exe" && ext != ".dll" && ext != ".so" && ext != ".dylib" {
 			return nil
