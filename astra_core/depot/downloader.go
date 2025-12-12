@@ -90,6 +90,7 @@ func findDepotPath(appID, depotID int) string {
 		fmt.Sprintf("/root/Steam/steamapps/content/app_%d/depot_%d", appID, depotID),
 		fmt.Sprintf("/home/*/.steam/steamapps/content/app_%d/depot_%d", appID, depotID),
 		fmt.Sprintf("/opt/steamcmd/steamapps/content/app_%d/depot_%d", appID, depotID),
+		fmt.Sprintf("/opt/steamcmd/linux32/steamapps/content/app_%d/depot_%d", appID, depotID),
 	}
 
 	for _, pattern := range patterns {
