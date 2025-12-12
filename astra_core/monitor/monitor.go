@@ -131,6 +131,9 @@ func (m *Monitor) check() {
 
 		m.analyzeDepotChanges(diffResult, &oldInfo, info)
 
+		// Optimize: Categorize strings once at ingestion time
+		diffResult.CategorizedStrings = diff.CategorizeStrings(diffResult.NewStrings)
+
 		log.Printf("Diff Result: Type=%s, Reason=%s", diffResult.Type, diffResult.TypeReason)
 		m.lastDiff = diffResult
 

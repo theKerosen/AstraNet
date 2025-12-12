@@ -1,12 +1,12 @@
 package api
 
 import (
+	"astra_core/diff"
 	"astra_core/monitor"
 	"astra_core/steam"
 	"encoding/json"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -371,13 +371,30 @@ func (s *Server) handleDiffDetails(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	diffData := state.LastDiff
 
-	diff := state.LastDiff
+	var stringBlocks []StringBlock
 
-	stringBlocks := categorizeStrings(diff.NewStrings)
+	// Use pre-computed categories if available
+	var sourceBlocks []diff.CategoryBlock
+	if len(diffData.CategorizedStrings) > 0 {
+		sourceBlocks = diffData.CategorizedStrings
+	} else {
+		// Fallback for old data
+		sourceBlocks = diff.CategorizeStrings(diffData.NewStrings)
+	}
 
-	depotBlocks := make([]DepotBlockAPI, 0, len(diff.ChangedDepots))
-	for _, d := range diff.ChangedDepots {
+	for _, cat := range sourceBlocks {
+		stringBlocks = append(stringBlocks, StringBlock{
+			Category: cat.Category,
+			Icon:     cat.Icon,
+			Count:    cat.Count,
+			Strings:  cat.Strings,
+		})
+	}
+
+	depotBlocks := make([]DepotBlockAPI, 0, len(diffData.ChangedDepots))
+	for _, d := range diffData.ChangedDepots {
 		depotBlocks = append(depotBlocks, DepotBlockAPI{
 			ID:       d.ID,
 			Name:     d.Name,
@@ -389,90 +406,18 @@ func (s *Server) handleDiffDetails(w http.ResponseWriter, r *http.Request) {
 
 	response := DiffDetailsResponse{
 		HasData:      true,
-		OldVersion:   diff.OldVersion,
-		NewVersion:   diff.NewVersion,
-		Type:         string(diff.Type),
-		TypeReason:   diff.TypeReason,
-		Analysis:     diff.Analysis,
+		OldVersion:   diffData.OldVersion,
+		NewVersion:   diffData.NewVersion,
+		Type:         string(diffData.Type),
+		TypeReason:   diffData.TypeReason,
+		Analysis:     diffData.Analysis,
 		StringBlocks: stringBlocks,
-		ProtobufList: diff.NewProtobufs,
+		ProtobufList: diffData.NewProtobufs,
 		DepotBlocks:  depotBlocks,
 		Timestamp:    time.Now().Unix(),
 	}
 
 	json.NewEncoder(w).Encode(response)
-}
-
-func categorizeStrings(strList []string) []StringBlock {
-	categories := map[string][]string{
-		"weapons":   {},
-		"maps":      {},
-		"items":     {},
-		"ui":        {},
-		"network":   {},
-		"anticheat": {},
-		"audio":     {},
-		"other":     {},
-	}
-
-	for _, s := range strList {
-		switch {
-		case containsAny(s, "weapon_", "ak47", "m4a1", "awp", "knife", "gun", "ammo"):
-			categories["weapons"] = append(categories["weapons"], s)
-		case containsAny(s, "map_", "de_", "cs_", "ar_", "level", "spawn"):
-			categories["maps"] = append(categories["maps"], s)
-		case containsAny(s, "item_", "skin", "case", "sticker", "agent", "glove"):
-			categories["items"] = append(categories["items"], s)
-		case containsAny(s, "ui_", "hud", "menu", "button", "panel", "label"):
-			categories["ui"] = append(categories["ui"], s)
-		case containsAny(s, "net_", "server", "client", "packet", "proto", "msg"):
-			categories["network"] = append(categories["network"], s)
-		case containsAny(s, "vac", "cheat", "ban", "trust", "secure"):
-			categories["anticheat"] = append(categories["anticheat"], s)
-		case containsAny(s, "sound", "audio", "music", "sfx", "voice"):
-			categories["audio"] = append(categories["audio"], s)
-		default:
-			categories["other"] = append(categories["other"], s)
-		}
-	}
-
-	icons := map[string]string{
-		"weapons":   "",
-		"maps":      "",
-		"items":     "",
-		"ui":        "",
-		"network":   "",
-		"anticheat": "",
-		"audio":     "",
-		"other":     "",
-	}
-
-	order := []string{"weapons", "maps", "items", "network", "anticheat", "ui", "audio", "other"}
-
-	blocks := make([]StringBlock, 0)
-	for _, cat := range order {
-		strs := categories[cat]
-		if len(strs) > 0 {
-			blocks = append(blocks, StringBlock{
-				Category: cat,
-				Icon:     icons[cat],
-				Count:    len(strs),
-				Strings:  strs,
-			})
-		}
-	}
-
-	return blocks
-}
-
-func containsAny(s string, patterns ...string) bool {
-	lower := strings.ToLower(s)
-	for _, p := range patterns {
-		if strings.Contains(lower, p) {
-			return true
-		}
-	}
-	return false
 }
 
 func getDepotPlatform(depotID string) string {

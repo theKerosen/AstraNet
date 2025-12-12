@@ -6,20 +6,21 @@ import (
 )
 
 type DiffResult struct {
-	NewVersion       string        `json:"new_version"`
-	OldVersion       string        `json:"old_version"`
-	ChangedFiles     []string      `json:"changed_files"`
-	NewFiles         []string      `json:"new_files"`
-	RemovedFiles     []string      `json:"removed_files"`
-	ChangedDepots    []DepotChange `json:"changed_depots"`
-	RawDiff          string        `json:"raw_diff,omitempty"`
-	Type             UpdateType    `json:"type"`
-	TypeReason       string        `json:"type_reason,omitempty"`
-	NewProtobufs     []string      `json:"new_protobufs,omitempty"`
-	RemovedProtobufs []string      `json:"removed_protobufs,omitempty"`
-	NewStrings       []string      `json:"new_strings,omitempty"` // Deprecated in favor of StringBlocks
-	StringBlocks     []StringBlock `json:"string_blocks,omitempty"`
-	Analysis         string        `json:"analysis,omitempty"`
+	NewVersion         string          `json:"new_version"`
+	OldVersion         string          `json:"old_version"`
+	ChangedFiles       []string        `json:"changed_files"`
+	NewFiles           []string        `json:"new_files"`
+	RemovedFiles       []string        `json:"removed_files"`
+	ChangedDepots      []DepotChange   `json:"changed_depots"`
+	RawDiff            string          `json:"raw_diff,omitempty"`
+	Type               UpdateType      `json:"type"`
+	TypeReason         string          `json:"type_reason,omitempty"`
+	NewProtobufs       []string        `json:"new_protobufs,omitempty"`
+	RemovedProtobufs   []string        `json:"removed_protobufs,omitempty"`
+	NewStrings         []string        `json:"new_strings,omitempty"` // Deprecated in favor of StringBlocks
+	StringBlocks       []StringBlock   `json:"string_blocks,omitempty"`
+	CategorizedStrings []CategoryBlock `json:"categorized_strings,omitempty"`
+	Analysis           string          `json:"analysis,omitempty"`
 }
 
 type StringBlock struct {
@@ -244,4 +245,83 @@ func getDepotName(depotID string) string {
 		return name
 	}
 	return "Unknown Depot"
+}
+
+type CategoryBlock struct {
+	Category string   `json:"category"`
+	Icon     string   `json:"icon"`
+	Count    int      `json:"count"`
+	Strings  []string `json:"strings"`
+}
+
+func CategorizeStrings(strList []string) []CategoryBlock {
+	categories := map[string][]string{
+		"weapons":   {},
+		"maps":      {},
+		"items":     {},
+		"ui":        {},
+		"network":   {},
+		"anticheat": {},
+		"audio":     {},
+		"other":     {},
+	}
+
+	for _, s := range strList {
+		switch {
+		case containsAny(s, "weapon_", "ak47", "m4a1", "awp", "knife", "gun", "ammo"):
+			categories["weapons"] = append(categories["weapons"], s)
+		case containsAny(s, "map_", "de_", "cs_", "ar_", "level", "spawn"):
+			categories["maps"] = append(categories["maps"], s)
+		case containsAny(s, "item_", "skin", "case", "sticker", "agent", "glove"):
+			categories["items"] = append(categories["items"], s)
+		case containsAny(s, "ui_", "hud", "menu", "button", "panel", "label"):
+			categories["ui"] = append(categories["ui"], s)
+		case containsAny(s, "net_", "server", "client", "packet", "proto", "msg"):
+			categories["network"] = append(categories["network"], s)
+		case containsAny(s, "vac", "cheat", "ban", "trust", "secure"):
+			categories["anticheat"] = append(categories["anticheat"], s)
+		case containsAny(s, "sound", "audio", "music", "sfx", "voice"):
+			categories["audio"] = append(categories["audio"], s)
+		default:
+			categories["other"] = append(categories["other"], s)
+		}
+	}
+
+	icons := map[string]string{
+		"weapons":   "",
+		"maps":      "",
+		"items":     "",
+		"ui":        "",
+		"network":   "",
+		"anticheat": "",
+		"audio":     "",
+		"other":     "",
+	}
+
+	order := []string{"weapons", "maps", "items", "network", "anticheat", "ui", "audio", "other"}
+
+	blocks := make([]CategoryBlock, 0)
+	for _, cat := range order {
+		strs := categories[cat]
+		if len(strs) > 0 {
+			blocks = append(blocks, CategoryBlock{
+				Category: cat,
+				Icon:     icons[cat],
+				Count:    len(strs),
+				Strings:  strs,
+			})
+		}
+	}
+
+	return blocks
+}
+
+func containsAny(s string, patterns ...string) bool {
+	lower := strings.ToLower(s)
+	for _, p := range patterns {
+		if strings.Contains(lower, p) {
+			return true
+		}
+	}
+	return false
 }
