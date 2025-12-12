@@ -69,8 +69,10 @@ func (d *Downloader) DownloadDepot(depotID int, manifestID string, fileFilter st
 	cmd := exec.CommandContext(ctx, SteamCMDPath, args...)
 	output, err := cmd.CombinedOutput()
 
+	// Log output to help debugging where files are stored
+	log.Printf("SteamCMD Output: %s", string(output))
+
 	if err != nil {
-		log.Printf("Download output: %s", string(output))
 		return "", fmt.Errorf("failed to download depot: %w", err)
 	}
 
@@ -87,6 +89,7 @@ func findDepotPath(appID, depotID int) string {
 	patterns := []string{
 		fmt.Sprintf("/root/Steam/steamapps/content/app_%d/depot_%d", appID, depotID),
 		fmt.Sprintf("/home/*/.steam/steamapps/content/app_%d/depot_%d", appID, depotID),
+		fmt.Sprintf("/opt/steamcmd/steamapps/content/app_%d/depot_%d", appID, depotID),
 	}
 
 	for _, pattern := range patterns {
