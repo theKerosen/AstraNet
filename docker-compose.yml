@@ -1,0 +1,25 @@
+services:
+  astranet:
+    build: .
+    container_name: astranet
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+      - APP_ID=${APP_ID:-730}
+      - DB_PATH=/data/astranet.db
+      - API_PORT=8000
+    volumes:
+      - astranet-data:/data
+      - depot-cache:/data/depot_cache
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  astranet-data:
+  depot-cache:
