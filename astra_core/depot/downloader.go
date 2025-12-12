@@ -79,6 +79,11 @@ func (d *Downloader) DownloadDepot(depotID int, manifestID string, fileFilter st
 
 	depotPath := findDepotPath(d.appID, depotID)
 	if depotPath != "" {
+		// Validate size before moving
+		size, _ := getDirSize(depotPath)
+		if size < 1000 {
+			log.Printf("WARNING: Downloaded depot %d is remarkably small (%d bytes). This usually indicates authentication failure or a protected depot.", depotID, size)
+		}
 		os.Rename(depotPath, outputDir)
 		return outputDir, nil
 	}
@@ -92,6 +97,8 @@ func findDepotPath(appID, depotID int) string {
 		fmt.Sprintf("/home/*/.steam/steamapps/content/app_%d/depot_%d", appID, depotID),
 		fmt.Sprintf("/opt/steamcmd/steamapps/content/app_%d/depot_%d", appID, depotID),
 		fmt.Sprintf("/opt/steamcmd/linux32/steamapps/content/app_%d/depot_%d", appID, depotID),
+		// Handle potential mixed slash weirdness from steamcmd on linux with windows emulation
+		fmt.Sprintf("/opt/steamcmd/linux32\\steamapps\\content\\app_%d\\depot_%d", appID, depotID),
 	}
 
 	for _, pattern := range patterns {

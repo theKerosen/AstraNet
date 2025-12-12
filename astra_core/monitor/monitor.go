@@ -154,8 +154,10 @@ func (m *Monitor) check() {
 }
 
 func (m *Monitor) analyzeDepotChanges(result *diff.DiffResult, oldInfo, newInfo *steamcmd.AppInfo) {
-	// Apenas Dedicated Server (734) e Win64 (735) são suficientes para analisar strings e CVars
-	binaryDepots := []string{"734", "735"}
+	// Depot 735 (Win64) e 734 (Binaries) são placeholders de 8 bytes na versão atual.
+	// Usando apenas 2347779 (CS2 Dedicated Server) que contém os binários reais.
+	binaryDepots := []string{"2347779"}
+	log.Printf("Configured binary depots for analysis: %v", binaryDepots)
 
 	for _, change := range result.ChangedDepots {
 		if !contains(binaryDepots, change.ID) {
@@ -189,6 +191,7 @@ func (m *Monitor) downloadAndAnalyzeDepot(result *diff.DiffResult, change diff.D
 
 func (m *Monitor) extractAndCompare(result *diff.DiffResult, oldPath, newPath string) {
 	log.Printf("Starting extraction in %s", newPath)
+	fileCount := 0
 
 	filepath.WalkDir(newPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -203,8 +206,12 @@ func (m *Monitor) extractAndCompare(result *diff.DiffResult, oldPath, newPath st
 
 		ext := strings.ToLower(filepath.Ext(path))
 		if ext != ".exe" && ext != ".dll" && ext != ".so" && ext != ".dylib" {
+			// Log skipped files to debug "8 bytes" issues
+			log.Printf("Skipping file with extension %s: %s", ext, path)
 			return nil
 		}
+
+		fileCount++
 
 		log.Printf("Extracting strings from %s...", filepath.Base(path))
 		newStrings, err := extractor.ExtractStrings(path)
@@ -239,6 +246,10 @@ func (m *Monitor) extractAndCompare(result *diff.DiffResult, oldPath, newPath st
 
 		return nil
 	})
+
+	if fileCount == 0 {
+		log.Printf("WARNING: No meaningful files found in extracted depot path %s. Download might have failed or depot is validly empty.", newPath)
+	}
 
 	// result.Analysis = generateAnalysisSummary(result) // Function not present/needed here
 }
