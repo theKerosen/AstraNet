@@ -17,8 +17,15 @@ type DiffResult struct {
 	TypeReason       string        `json:"type_reason,omitempty"`
 	NewProtobufs     []string      `json:"new_protobufs,omitempty"`
 	RemovedProtobufs []string      `json:"removed_protobufs,omitempty"`
-	NewStrings       []string      `json:"new_strings,omitempty"`
+	NewStrings       []string      `json:"new_strings,omitempty"` // Deprecated in favor of StringBlocks
+	StringBlocks     []StringBlock `json:"string_blocks,omitempty"`
 	Analysis         string        `json:"analysis,omitempty"`
+}
+
+type StringBlock struct {
+	SourceFile string   `json:"source_file"`
+	Strings    []string `json:"strings"`
+	Category   string   `json:"category,omitempty"` // Optional: e.g. "server.dll" could be a category itself
 }
 
 type DepotChange struct {

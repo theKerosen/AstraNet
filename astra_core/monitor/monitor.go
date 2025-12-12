@@ -223,13 +223,22 @@ func (m *Monitor) extractAndCompare(result *diff.DiffResult, oldPath, newPath st
 		}
 		log.Printf("Extracted %d interesting strings from %s", len(interesting), filepath.Base(path))
 
-		var newStrings []string
+		var fileStrings []string
 		for _, match := range interesting {
+			// Backwards compatibility
 			result.NewStrings = append(result.NewStrings, match.Value)
-			newStrings = append(newStrings, match.Value)
+			fileStrings = append(fileStrings, match.Value)
 		}
 
-		protos := extractor.ExtractProtobufs(newStrings)
+		if len(fileStrings) > 0 {
+			result.StringBlocks = append(result.StringBlocks, diff.StringBlock{
+				SourceFile: filepath.Base(path),
+				Strings:    fileStrings,
+				Category:   ext, // storing extension or generic category
+			})
+		}
+
+		protos := extractor.ExtractProtobufs(fileStrings)
 		for _, proto := range protos {
 			result.NewProtobufs = append(result.NewProtobufs, proto.Name)
 		}
@@ -241,7 +250,7 @@ func (m *Monitor) extractAndCompare(result *diff.DiffResult, oldPath, newPath st
 			if _, err := os.Stat(oldFile); err == nil {
 				oldStrings, err := extractor.ExtractStrings(oldFile)
 				if err == nil {
-					added, removed := extractor.CompareStringSets(oldStrings, newStrings)
+					added, removed := extractor.CompareStringSets(oldStrings, fileStrings)
 					m.tracker.EnhanceWithStringAnalysis(result, added, removed)
 				}
 			}
