@@ -4,9 +4,11 @@ import (
 	"astra_core/diff"
 	"astra_core/monitor"
 	"astra_core/steam"
+	"compress/gzip"
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -25,25 +27,25 @@ func NewServer(mon *monitor.Monitor) *Server {
 }
 
 func (s *Server) Start(addr string) {
-	http.HandleFunc("/", s.handleStatus)
-	http.HandleFunc("/status", s.handleStatus)
-	http.HandleFunc("/health", s.handleHealth)
-	http.HandleFunc("/diff", s.handleDiff)
-	http.HandleFunc("/diff/details", s.handleDiffDetails)
-	http.HandleFunc("/news", s.handleNews)
+	http.HandleFunc("/", withGzip(s.handleStatus))
+	http.HandleFunc("/status", withGzip(s.handleStatus))
+	http.HandleFunc("/health", s.handleHealth) // Health check usually small, no gzip needed
+	http.HandleFunc("/diff", withGzip(s.handleDiff))
+	http.HandleFunc("/diff/details", withGzip(s.handleDiffDetails))
+	http.HandleFunc("/news", withGzip(s.handleNews))
 	http.HandleFunc("/players", s.handlePlayers)
-	http.HandleFunc("/depots", s.handleDepots)
+	http.HandleFunc("/depots", withGzip(s.handleDepots))
 	http.HandleFunc("/servers", s.handleServers)
 
-	http.HandleFunc("/steam", s.handleStatus)
-	http.HandleFunc("/steam/", s.handleStatus)
-	http.HandleFunc("/steam/status", s.handleStatus)
+	http.HandleFunc("/steam", withGzip(s.handleStatus))
+	http.HandleFunc("/steam/", withGzip(s.handleStatus))
+	http.HandleFunc("/steam/status", withGzip(s.handleStatus))
 	http.HandleFunc("/steam/health", s.handleHealth)
-	http.HandleFunc("/steam/diff", s.handleDiff)
-	http.HandleFunc("/steam/diff/details", s.handleDiffDetails)
-	http.HandleFunc("/steam/news", s.handleNews)
+	http.HandleFunc("/steam/diff", withGzip(s.handleDiff))
+	http.HandleFunc("/steam/diff/details", withGzip(s.handleDiffDetails))
+	http.HandleFunc("/steam/news", withGzip(s.handleNews))
 	http.HandleFunc("/steam/players", s.handlePlayers)
-	http.HandleFunc("/steam/depots", s.handleDepots)
+	http.HandleFunc("/steam/depots", withGzip(s.handleDepots))
 	http.HandleFunc("/steam/servers", s.handleServers)
 
 	log.Printf("API Server listening on %s", addr)
@@ -371,6 +373,12 @@ func (s *Server) handleDiffDetails(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	// Cache check based on ChangeNumber
+	etag := "W/" + "\"" + state.ChangeNumber + "\""
+	if checkCache(w, r, etag) {
+		return
+	}
 	diffData := state.LastDiff
 
 	var stringBlocks []StringBlock
@@ -432,4 +440,57 @@ func getDepotPlatform(depotID string) string {
 		return p
 	}
 	return "Common"
+}
+
+// Middleware & Helpers
+
+func withGzip(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		setCORS(w) // Ensure CORS is set before anything else
+		if r.Method == "OPTIONS" {
+			return
+		}
+
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Encoding", "gzip")
+		gz := gzip.NewWriter(w)
+		defer gz.Close()
+
+		gzw := gzipResponseWriter{Writer: gz, ResponseWriter: w}
+		next(&gzw, r)
+	}
+}
+
+type gzipResponseWriter struct {
+	*gzip.Writer
+	ResponseWriter http.ResponseWriter
+}
+
+func (w *gzipResponseWriter) Header() http.Header {
+	return w.ResponseWriter.Header()
+}
+
+func (w *gzipResponseWriter) Write(b []byte) (int, error) {
+	return w.Writer.Write(b)
+}
+
+func (w *gzipResponseWriter) WriteHeader(statusCode int) {
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func checkCache(w http.ResponseWriter, r *http.Request, etag string) bool {
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "public, max-age=60") // Cache for 1 min, but revalidate with ETag
+
+	if match := r.Header.Get("If-None-Match"); match != "" {
+		if match == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return true
+		}
+	}
+	return false
 }
