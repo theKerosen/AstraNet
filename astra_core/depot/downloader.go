@@ -44,10 +44,16 @@ func (d *Downloader) DownloadDepot(depotID int, manifestID string, fileFilter st
 		return outputDir, nil
 	}
 
-	args := []string{
-		"+login", "anonymous",
-		"+download_depot", fmt.Sprintf("%d", d.appID), fmt.Sprintf("%d", depotID), manifestID,
+	loginArgs := []string{"+login", "anonymous"}
+	if user := os.Getenv("STEAM_USER"); user != "" {
+		if pass := os.Getenv("STEAM_PASS"); pass != "" {
+			loginArgs = []string{"+login", user, pass}
+		}
 	}
+
+	args := append(loginArgs,
+		"+download_depot", fmt.Sprintf("%d", d.appID), fmt.Sprintf("%d", depotID), manifestID,
+	)
 
 	if fileFilter != "" {
 		args = append(args, fileFilter)
