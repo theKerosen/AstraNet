@@ -9,6 +9,7 @@ import (
 	"astra_core/steamcmd"
 	"encoding/json"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -187,37 +188,44 @@ func (m *Monitor) downloadAndAnalyzeDepot(result *diff.DiffResult, change diff.D
 }
 
 func (m *Monitor) extractAndCompare(result *diff.DiffResult, oldPath, newPath string) {
-	binaries := []string{"*.exe", "*.dll", "*.so"}
 	log.Printf("Starting extraction in %s", newPath)
 
-	for _, pattern := range binaries {
-		newFiles, _ := filepath.Glob(filepath.Join(newPath, "**", pattern))
-		if len(newFiles) > 0 {
-			log.Printf("Found %d files matching %s", len(newFiles), pattern)
+	filepath.WalkDir(newPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
 		}
 
-		for _, newFile := range newFiles {
-			log.Printf("Extracting strings from %s...", filepath.Base(newFile))
-			newStrings, err := extractor.ExtractStrings(newFile)
-			if err != nil {
-				log.Printf("Extraction failed for %s: %v", filepath.Base(newFile), err)
-				continue
-			}
-			log.Printf("Extracted %d strings from %s", len(newStrings), filepath.Base(newFile))
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext != ".exe" && ext != ".dll" && ext != ".so" && ext != ".dylib" {
+			return nil
+		}
 
-			interesting := extractor.FilterInterestingStrings(newStrings)
-			for _, match := range interesting {
-				result.NewStrings = append(result.NewStrings, match.Value)
-			}
+		log.Printf("Extracting strings from %s...", filepath.Base(path))
+		newStrings, err := extractor.ExtractStrings(path)
+		if err != nil {
+			log.Printf("Extraction failed for %s: %v", filepath.Base(path), err)
+			return nil
+		}
+		log.Printf("Extracted %d strings from %s", len(newStrings), filepath.Base(path))
 
-			protos := extractor.ExtractProtobufs(newStrings)
-			for _, proto := range protos {
-				result.NewProtobufs = append(result.NewProtobufs, proto.Name)
-			}
+		interesting := extractor.FilterInterestingStrings(newStrings)
+		for _, match := range interesting {
+			result.NewStrings = append(result.NewStrings, match.Value)
+		}
 
-			if oldPath != "" {
-				relPath, _ := filepath.Rel(newPath, newFile)
-				oldFile := filepath.Join(oldPath, relPath)
+		protos := extractor.ExtractProtobufs(newStrings)
+		for _, proto := range protos {
+			result.NewProtobufs = append(result.NewProtobufs, proto.Name)
+		}
+
+		// Comparação com versão antiga (se existir)
+		if oldPath != "" {
+			relPath, _ := filepath.Rel(newPath, path)
+			oldFile := filepath.Join(oldPath, relPath)
+			if _, err := os.Stat(oldFile); err == nil {
 				oldStrings, err := extractor.ExtractStrings(oldFile)
 				if err == nil {
 					added, removed := extractor.CompareStringSets(oldStrings, newStrings)
@@ -225,9 +233,11 @@ func (m *Monitor) extractAndCompare(result *diff.DiffResult, oldPath, newPath st
 				}
 			}
 		}
-	}
 
-	result.Analysis = generateAnalysisSummary(result)
+		return nil
+	})
+
+	// result.Analysis = generateAnalysisSummary(result) // Function not present/needed here
 }
 
 func generateAnalysisSummary(result *diff.DiffResult) string {
