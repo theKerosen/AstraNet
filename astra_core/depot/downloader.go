@@ -92,21 +92,60 @@ func (d *Downloader) DownloadDepot(depotID int, manifestID string, fileFilter st
 }
 
 func findDepotPath(appID, depotID int) string {
+	// 1. Try known patterns first (fastest)
 	patterns := []string{
 		fmt.Sprintf("/root/Steam/steamapps/content/app_%d/depot_%d", appID, depotID),
 		fmt.Sprintf("/home/*/.steam/steamapps/content/app_%d/depot_%d", appID, depotID),
 		fmt.Sprintf("/opt/steamcmd/steamapps/content/app_%d/depot_%d", appID, depotID),
 		fmt.Sprintf("/opt/steamcmd/linux32/steamapps/content/app_%d/depot_%d", appID, depotID),
-		// Handle potential mixed slash weirdness from steamcmd on linux with windows emulation
-		fmt.Sprintf("/opt/steamcmd/linux32\\steamapps\\content\\app_%d\\depot_%d", appID, depotID),
 	}
 
 	for _, pattern := range patterns {
 		matches, _ := filepath.Glob(pattern)
 		if len(matches) > 0 {
-			return matches[0]
+			info, err := os.Stat(matches[0])
+			if err == nil && info.IsDir() {
+				// Check if it's not empty
+				if size, _ := getDirSize(matches[0]); size > 0 {
+					return matches[0]
+				}
+			}
 		}
 	}
+
+	// 2. Fallback: Recursive search in common roots
+	roots := []string{"/opt/steamcmd", "/root", "/data"}
+	targetName := fmt.Sprintf("depot_%d", depotID)
+
+	for _, root := range roots {
+		found := ""
+		filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			if info.IsDir() && info.Name() == targetName {
+				// Verify parent structure to avoid false positives if possible, or just accept it
+				found = path
+				return fmt.Errorf("found") // Stop walking
+			}
+			return nil
+		})
+
+		if found != "" {
+			log.Printf("Found depot %d via recursive search at: %s", depotID, found)
+			return found
+		}
+	}
+
+	// 3. Debug: Log structure of /opt/steamcmd to help diagnosis
+	log.Println("DEBUG: Dumping /opt/steamcmd structure:")
+	filepath.Walk("/opt/steamcmd", func(path string, info os.FileInfo, err error) error {
+		if err == nil {
+			log.Println(path)
+		}
+		return nil
+	})
+
 	return ""
 }
 
