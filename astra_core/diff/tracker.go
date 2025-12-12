@@ -256,14 +256,14 @@ type CategoryBlock struct {
 
 func CategorizeStrings(strList []string) []CategoryBlock {
 	categories := map[string][]string{
-		"weapons":   {},
-		"maps":      {},
-		"items":     {},
-		"ui":        {},
-		"network":   {},
-		"anticheat": {},
-		"audio":     {},
-		"other":     {},
+		"weapons":  {},
+		"maps":     {},
+		"items":    {},
+		"ui":       {},
+		"network":  {},
+		"security": {},
+		"audio":    {},
+		"other":    {},
 	}
 
 	for _, s := range strList {
@@ -278,8 +278,8 @@ func CategorizeStrings(strList []string) []CategoryBlock {
 			categories["ui"] = append(categories["ui"], s)
 		case containsAny(s, "net_", "server", "client", "packet", "proto", "msg"):
 			categories["network"] = append(categories["network"], s)
-		case containsAny(s, "vac", "cheat", "ban", "trust", "secure"):
-			categories["anticheat"] = append(categories["anticheat"], s)
+		case containsAny(s, "vac", "cheat", "ban", "trust", "secure", "rsa", "key", "cert"):
+			categories["security"] = append(categories["security"], s)
 		case containsAny(s, "sound", "audio", "music", "sfx", "voice"):
 			categories["audio"] = append(categories["audio"], s)
 		default:
@@ -288,17 +288,17 @@ func CategorizeStrings(strList []string) []CategoryBlock {
 	}
 
 	icons := map[string]string{
-		"weapons":   "",
-		"maps":      "",
-		"items":     "",
-		"ui":        "",
-		"network":   "",
-		"anticheat": "",
-		"audio":     "",
-		"other":     "",
+		"weapons":  "",
+		"maps":     "",
+		"items":    "",
+		"ui":       "",
+		"network":  "",
+		"security": "",
+		"audio":    "",
+		"other":    "",
 	}
 
-	order := []string{"weapons", "maps", "items", "network", "anticheat", "ui", "audio", "other"}
+	order := []string{"weapons", "maps", "items", "network", "security", "ui", "audio", "other"}
 
 	blocks := make([]CategoryBlock, 0)
 	for _, cat := range order {
