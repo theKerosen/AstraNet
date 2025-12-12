@@ -89,7 +89,7 @@ func (t *Tracker) ProcessUpdate(oldInfo, newInfo *steamcmd.AppInfo) *DiffResult 
 func (t *Tracker) EnhanceWithStringAnalysis(result *DiffResult, newStrings, oldStrings []string) {
 	added, removed := compareStrings(oldStrings, newStrings)
 
-	result.NewStrings = filterTopStrings(added, 50)
+	result.NewStrings = filterTopStrings(added, 5000)
 
 	newType, reason := classifyByStrings(added, removed)
 	if newType != UpdateTypeUnknown {

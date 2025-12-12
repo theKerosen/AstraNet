@@ -189,15 +189,22 @@ func (m *Monitor) downloadAndAnalyzeDepot(result *diff.DiffResult, change diff.D
 
 func (m *Monitor) extractAndCompare(result *diff.DiffResult, oldPath, newPath string) {
 	binaries := []string{"*.exe", "*.dll", "*.so"}
+	log.Printf("Starting extraction in %s", newPath)
 
 	for _, pattern := range binaries {
 		newFiles, _ := filepath.Glob(filepath.Join(newPath, "**", pattern))
+		if len(newFiles) > 0 {
+			log.Printf("Found %d files matching %s", len(newFiles), pattern)
+		}
 
 		for _, newFile := range newFiles {
+			log.Printf("Extracting strings from %s...", filepath.Base(newFile))
 			newStrings, err := extractor.ExtractStrings(newFile)
 			if err != nil {
+				log.Printf("Extraction failed for %s: %v", filepath.Base(newFile), err)
 				continue
 			}
+			log.Printf("Extracted %d strings from %s", len(newStrings), filepath.Base(newFile))
 
 			interesting := extractor.FilterInterestingStrings(newStrings)
 			for _, match := range interesting {
